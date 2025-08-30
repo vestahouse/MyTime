@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Time Matrix — Clean Square (Lowercase + New Splits)</title>
+<style>
+  :root{ --bg:#0c1016; --fg:#e9eef6; --muted:#96a2b1; --card:#141a22; --line:#2a3444; --ok:#4bd2a7; --warn:#ffcc66; --bad:#ff7a7a; }
+  html,body{height:100%}
+  body{margin:0; background:#0c1016; color:var(--fg); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+       display:grid; place-items:start center; padding:18px;}
+  .app{width:min(980px,96vw); display:grid; gap:14px}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px}
+  .head{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap}
+  .controls{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  input[type="text"], button, select{background:#0f1520; color:#e9eef6; border:1px solid #2a3446; border-radius:10px; padding:6px 10px;}
+  button{cursor:pointer}
+  .explain{color:var(--muted)}
+
+  /* Square chart */
+  .sheet{background:#fff; border-radius:14px; border:1px solid #e4e8f0; padding:12px}
+  .bar{width:min(100%,92vh); aspect-ratio:1/1; border-radius:12px; overflow:hidden;
+       outline:1px solid #e6e9ef; display:flex}
+  .seg{position:relative; display:flex; align-items:stretch; border-right:1px solid rgba(0,0,0,.06); cursor:pointer}
+  .seg:last-child{border-right:none}
+  .seg-inner{display:flex; flex-direction:column; width:100%}
+  .sub-seg{position:relative; border-bottom:1px solid rgba(0,0,0,.06); cursor:pointer}
+  .sub-seg:last-child{border-bottom:none}
+
+  /* Labels (displayed lowercase) */
+  .area-label{
+    position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(255,255,255,.94); color:#111; border:1px solid #eaeef5;
+    border-radius:12px; padding:4px 8px; font-size:12px; font-weight:800;
+    white-space:normal; text-align:center; line-height:1.15; max-width:92%;
+    pointer-events:none; user-select:none; text-transform:lowercase;
+  }
+  .col-label.rotate-90{ transform:translate(-50%,-50%) rotate(-90deg); transform-origin:center center; max-width:88%; }
+
+  /* Pop-up (nudge): mobile-friendly width */
+  .nudge-backdrop{
+    position:fixed; inset:0; display:none; z-index:60;
+    place-items:center; padding:max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    background:transparent;
+  }
+  .nudge{
+    position:absolute; background:#0f1520; color:#e9eef6; border:1px solid #2a3444; border-radius:12px;
+    padding:10px; display:flex; flex-direction:column; gap:10px; box-shadow:0 10px 30px rgba(0,0,0,.4);
+    width:min(560px, 96vw); max-width:96vw;
+  }
+  @media (max-width:600px){
+    .nudge-backdrop{ background:rgba(0,0,0,.35); }
+    .nudge{ position:relative; left:auto !important; top:auto !important; width:calc(100vw - 24px); max-width:calc(100vw - 24px); }
+  }
+  .nrow{display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap}
+  .tag{font-weight:800; font-size:13px; color:#c9d2df; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:60vw}
+  .nval{font-variant-numeric:tabular-nums; width:64px; text-align:center; font-weight:800}
+  .nbtn{min-width:38px; height:34px; border-radius:8px; border:1px solid #2a3444; background:#172133; color:#e9eef6; font-weight:900; font-size:16px}
+  .nbtn:disabled{opacity:.4}
+  .naux{background:#1a2436; border:1px solid #263247; height:32px; border-radius:8px; padding:0 12px; font-weight:700}
+  .nsep{height:1px; background:#263247}
+
+  /* Fast split */
+  .qs{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+  .qs .label{color:#97a4b6; font-size:12px}
+  .qs .group{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+  .qs button{height:30px; border-radius:8px}
+  .qs select{height:30px}
+
+  /* Subs inline */
+  .subs{display:grid; gap:6px}
+  .srow{display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:6px}
+  .sname{min-width:0}
+  .sname input{width:100%; background:#10192a; border:1px solid #2a3444; border-radius:8px; padding:6px 8px; color:#e9eef6}
+  .sval{font-variant-numeric:tabular-nums; width:54px; text-align:center; font-weight:800}
+  .sbtn{width:32px; height:28px; border-radius:8px; border:1px solid #2a3444; background:#10192a; color:#e9eef6; font-weight:900}
+
+  .err{position:fixed; left:12px; bottom:12px; background:#3c1020; color:#ffd7e1; border:1px solid #6a1a35; padding:8px 10px; border-radius:8px; font-size:12px; display:none; z-index:80}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card head">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <h1 style="margin:0">My Week Allocation</h1>
+      <input id="title" type="text" value="My Week Allocation" aria-label="Chart title"/>
+    </div>
+    <div class="controls">
+      <button id="reset">Reset</button>
+      <button id="save">Save</button>
+      <button id="load">Load</button>
+      <button id="print">Print / PDF</button>
+    </div>
+  </div>
+
+  <div class="card explain">
+    Tap a column to tweak its share (+/− in 5% steps). If it has sub-activities, adjust them in the pop-up or use “Quick split”. Columns auto-sort (largest on the left). Labels display in lowercase.
+  </div>
+
+  <div class="card printable">
+    <div class="sheet">
+      <div class="bar" id="bar" aria-label="Allocation chart (largest left)"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Inline pop-up -->
+<div class="nudge-backdrop" id="nudgeBackdrop" aria-hidden="true">
+  <div class="nudge" id="nudge" role="dialog" aria-modal="true">
+    <div class="nrow">
+      <span class="tag" id="nTag">item</span>
+      <div style="display:flex; align-items:center; gap:8px">
+        <button class="nbtn" id="nMinus">–</button>
+        <span class="nval" id="nVal">0%</span>
+        <button class="nbtn" id="nPlus">+</button>
+      </div>
+    </div>
+
+    <div class="qs">
+      <span class="label">Quick split</span>
+      <div class="group">
+        <select id="qsPattern" title="Pattern">
+          <option value="even">Even</option>
+          <option value="9010">90·10</option>
+          <option value="801010">80·10·10</option>
+          <option value="pareto">Pareto</option>
+        </select>
+        <button id="qs2">2</button>
+        <button id="qs3">3</button>
+        <button id="qs4">4</button>
+        <button id="qs5">5</button>
+      </div>
+      <div class="group">
+        <button id="qsAdd">+ Add sub</button>
+        <button id="qsRemove">– Remove last</button>
+      </div>
+    </div>
+
+    <div class="nsep"></div>
+    <div class="subs" id="subsPanel"></div>
+
+    <div class="nrow" style="justify-content:flex-end; gap:8px">
+      <button class="naux" id="nClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="err" id="err">Something went wrong loading the chart. Try refresh. (Console has details.)</div>
+
+<script>
+(function(){
+  // Error banner
+  var _origError = window.onerror;
+  window.onerror = function(msg, src, line, col, err){
+    try{ document.getElementById('err').style.display='block'; }catch(e){}
+    if (_origError) return _origError(msg, src, line, col, err);
+  };
+
+  var $ = function(s){ return document.querySelector(s); };
+  var bar = $("#bar"), titleInput = $("#title");
+
+  // Stable IDs
+  var _uid=0; function uid(){ return (++_uid).toString(36)+Date.now().toString(36); }
+
+  // Build START with your requested splits; removed the main "other" column entirely
+  function buildStart(){
+    var workId = uid(), famId = uid(), sleepId=uid(), sportId=uid();
+    var arr = [
+      // Work 35% total, subs: 80% work / 10% meetings / 10% commute
+      { id: workId, name:"Work", t:7, color:"#80b1d3",
+        subs: [
+          {id: uid(), name:"work",     active:true, t:16, color:"#ffffff"},
+          {id: uid(), name:"meetings", active:true, t: 2, color:"#ffffff"},
+          {id: uid(), name:"commute",  active:true, t: 2, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"}
+        ]
+      },
+      // Family & Friends 25% total, subs 60/40
+      { id: famId, name:"Family & Friends", t:5, color:"#fdb462",
+        subs: [
+          {id: uid(), name:"family",  active:true, t:12, color:"#ffffff"},
+          {id: uid(), name:"friends", active:true, t: 8, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"}
+        ]
+      },
+      // Sleep 20% total, subs 90/10: sleep / relax
+      { id: sleepId, name:"Sleep", t:4, color:"#8dd3c7",
+        subs: [
+          {id: uid(), name:"sleep",  active:true, t:18, color:"#ffffff"},
+          {id: uid(), name:"relax",  active:true, t: 2, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"}
+        ]
+      },
+      // Sports & Leisure 20% total → 40% leisure / 20% sports / 20% learning / 20% other
+      { id: sportId, name:"Sports & Leisure", t:4, color:"#b3de69",
+        subs: [
+          {id: uid(), name:"leisure",  active:true, t: 8, color:"#ffffff"},
+          {id: uid(), name:"sports",   active:true, t: 4, color:"#ffffff"},
+          {id: uid(), name:"learning", active:true, t: 4, color:"#ffffff"},
+          {id: uid(), name:"other",    active:true, t: 4, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"},
+          {id: uid(), name:"", active:false, t:0, color:"#ffffff"}
+        ]
+      }
+    ];
+    // Normalize sub-shades for items that already have subs
+    for (var i=0;i<arr.length;i++){ if (arr[i].subs){ normalizeSubShadesStandalone(arr[i]); } }
+    return arr;
+  }
+
+  // Shade helpers (standalone for start)
+  function hexToHsl(hex){
+    var c = hex.replace('#',''); if (c.length===3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+    var r=parseInt(c.slice(0,2),16)/255, g=parseInt(c.slice(2,4),16)/255, b=parseInt(c.slice(4,6),16)/255;
+    var max=Math.max(r,g,b), min=Math.min(r,g,b), h=0,s=0,l=(max+min)/2, d=max-min;
+    if (d!==0){ s = l>0.5 ? d/(2-max-min) : d/(max+min); switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;default:h=(r-g)/d+4;} h*=60; }
+    return {h:h, s:s, l:l};
+  }
+  function hslToHex(h,s,l){
+    s=Math.max(0,Math.min(1,s)); l=Math.max(0,Math.min(1,l));
+    var c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2, r=0,g=0,b=0;
+    if (0<=h && h<60){r=c;g=x;b=0;} else if (60<=h && h<120){r=x;g=c;b=0;}
+    else if (120<=h && h<180){r=0;g=c;b=x;} else if (180<=h && h<240){r=0;g=x;b=c;}
+    else if (240<=h && h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
+    function toHex(v){ return Math.round((v+m)*255).toString(16).padStart(2,'0'); }
+    return "#"+toHex(r)+toHex(g)+toHex(b);
+  }
+  function generateShades(baseHex, count){
+    var hsl = hexToHsl(baseHex), h=hsl.h,s=hsl.s,l=hsl.l;
+    var span=0.36, start=Math.min(0.92, Math.max(0.2, l + span/2)), step=(count>1? span/(count-1):0);
+    var sat = Math.min(0.7, Math.max(0.25, s)), arr=[];
+    for (var i=0;i<count;i++){ var li = Math.max(0.12, Math.min(0.92, start - i*step)); arr.push(hslToHex(h, sat, li)); }
+    return arr;
+  }
+  function normalizeSubShadesStandalone(item){
+    var act = item.subs.filter(function(s){return s.active;});
+    if (!act.length) return;
+    var shades = generateShades(item.color, act.length);
+    var idxs=[], k; for (k=0;k<item.subs.length;k++){ if(item.subs[k].active) idxs.push(k); }
+    idxs.sort(function(a,b){ return (item.subs[b].t - item.subs[a].t) || (item.subs[a].name||"").localeCompare(item.subs[b].name||""); });
+    for (var p=0;p<idxs.length;p++){ item.subs[idxs[p]].color = shades[p]; }
+  }
+
+  var items = buildStart();
+
+  // Restore persisted (if present)
+  try{
+    var s = JSON.parse(localStorage.getItem("tm_ticks_build")||"null");
+    if (s && Array.isArray(s.items)){
+      items = s.items.map(function(it){
+        it.id = it.id || uid();
+        if (it.subs){ it.subs = it.subs.map(function(ss){ ss.id = ss.id || uid(); return ss; }); }
+        return it;
+      });
+      if (s.title) titleInput.value = s.title;
+    }
+  }catch(e){}
+
+  // Utils
+  function clamp(n,min,max){ return Math.min(Math.max(n,min),max); }
+  function pct(t){ return t*5; }
+  function totalTicks(list){ var a=0; for(var i=0;i<list.length;i++) a+=list[i].t; return a; }
+  function findItemIndexById(id){ for(var i=0;i<items.length;i++){ if(items[i].id===id) return i; } return -1; }
+  function itemsSortedDesc(){ return items.slice().sort(function(a,b){ return (b.t - a.t) || a.name.localeCompare(b.name); }); }
+  function takeTicksFromOthers(idx, ticks){
+    while (ticks>0){
+      var best=-1, bestVal=-1;
+      for (var i=0;i<items.length;i++){ if(i===idx) continue; if(items[i].t>bestVal){bestVal=items[i].t;best=i;} }
+      if (bestVal<=0) break; items[best].t -= 1; ticks -= 1;
+    }
+  }
+  function giveTicksToOthers(idx, ticks){
+    while (ticks>0){
+      var best=-1, bestVal=Infinity;
+      for (var i=0;i<items.length;i++){ if(i===idx) continue; if(items[i].t<bestVal){bestVal=items[i].t;best=i;} }
+      if (best<0) break; items[best].t += 1; ticks -= 1;
+    }
+  }
+  function maxIdxExcl(i0){ var best=-1,v=-1; for(var i=0;i<items.length;i++){ if(i===i0) continue; if(items[i].t>v){v=items[i].t;best=i;} } return best; }
+  function minIdxExcl(i0){ var best=-1,v=Infinity; for(var i=0;i<items.length;i++){ if(i===i0) continue; if(items[i].t<v){v=items[i].t;best=i;} } return best; }
+  function enforce20(preferIdx){
+    var sum = totalTicks(items);
+    while (sum>20){ var k=maxIdxExcl(preferIdx); if (k<0) k=preferIdx; items[k].t--; sum--; }
+    while (sum<20){ var k2=minIdxExcl(preferIdx); if (k2<0) k2=preferIdx; items[k2].t++; sum++; }
+  }
+
+  // Subs
+  function ensureSubs(i){
+    var item = items[i];
+    if (!item.subs){
+      item.subs = [];
+      for (var k=0;k<9;k++){
+        item.subs.push({ id:uid(), name:(k===0? (item.name.toLowerCase()) : ""), active:(k===0), t:(k===0?20:0), color:"#ffffff" });
+      }
+      normalizeSubShades(i);
+    }
+  }
+  function activeSubs(item){ if (!item.subs) return []; var out=[]; for (var i=0;i<item.subs.length;i++){ if (item.subs[i].active) out.push(item.subs[i]); } return out; }
+  function rebalanceSubTicks(item){
+    var s = activeSubs(item), sum=0, i; for(i=0;i<s.length;i++) sum+=s[i].t;
+    while(sum<20){ s.sort(function(a,b){return a.t-b.t}); s[0].t+=1; sum++; }
+    while(sum>20){ s.sort(function(a,b){return b.t-a.t}); s[0].t-=1; sum--; }
+  }
+  function adjustSubTick(item, subIdx, dir){
+    var sIdx=[]; for (var i=0;i<item.subs.length;i++){ if(item.subs[i].active) sIdx.push(i); }
+    if (dir>0){
+      var best=-1, bestVal=-1;
+      for (i=0;i<sIdx.length;i++){ var idx=sIdx[i]; if (idx!==subIdx && item.subs[idx].t>bestVal){bestVal=item.subs[idx].t; best=idx;} }
+      if (bestVal<=0 || item.subs[subIdx].t>=20) return false;
+      item.subs[subIdx].t += 1; item.subs[best].t -= 1; return true;
+    } else {
+      if (item.subs[subIdx].t<=0) return false;
+      var best2=-1, bestVal2=Infinity;
+      for (i=0;i<sIdx.length;i++){ idx=sIdx[i]; if (idx!==subIdx && item.subs[idx].t<bestVal2){bestVal2=item.subs[idx].t; best2=idx;} }
+      if (best2<0) return false;
+      item.subs[subIdx].t -= 1; item.subs[best2].t += 1; return true;
+    }
+  }
+  function generateShades(baseHex, count){
+    var hsl = hexToHsl(baseHex), h=hsl.h,s=hsl.s,l=hsl.l;
+    var span=0.36, start=Math.min(0.92, Math.max(0.2, l + span/2)), step=(count>1? span/(count-1):0);
+    var sat = Math.min(0.7, Math.max(0.25, s)), arr=[];
+    for (var i=0;i<count;i++){ var li = Math.max(0.12, Math.min(0.92, start - i*step)); arr.push(hslToHex(h, sat, li)); }
+    return arr;
+  }
+  function hexToHsl(hex){
+    var c = hex.replace('#',''); if (c.length===3) c = c[0]+c[0]+c[1]+c[1]+c[2]+c[2];
+    var r=parseInt(c.slice(0,2),16)/255, g=parseInt(c.slice(2,4),16)/255, b=parseInt(c.slice(4,6),16)/255;
+    var max=Math.max(r,g,b), min=Math.min(r,g,b), h=0,s=0,l=(max+min)/2, d=max-min;
+    if (d!==0){ s = l>0.5 ? d/(2-max-min) : d/(max+min); switch(max){case r:h=(g-b)/d+(g<b?6:0);break;case g:h=(b-r)/d+2;break;default:h=(r-g)/d+4;} h*=60; }
+    return {h:h, s:s, l:l};
+  }
+  function hslToHex(h,s,l){
+    s=Math.max(0,Math.min(1,s)); l=Math.max(0,Math.min(1,l));
+    var c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs((h/60)%2-1)), m=l-c/2, r=0,g=0,b=0;
+    if (0<=h && h<60){r=c;g=x;b=0;} else if (60<=h && h<120){r=x;g=c;b=0;}
+    else if (120<=h && h<180){r=0;g=c;b=x;} else if (180<=h && h<240){r=0;g=x;b=c;}
+    else if (240<=h && h<300){r=x;g=0;b=c;} else {r=c;g=0;b=x;}
+    function toHex(v){ return Math.round((v+m)*255).toString(16).padStart(2,'0'); }
+    return "#"+toHex(r)+toHex(g)+toHex(b);
+  }
+  function normalizeSubShades(i){
+    var item = items[i], act=activeSubs(item); if (!act.length) return;
+    var shades = generateShades(item.color, act.length);
+    var idxs=[]; for (var k=0;k<item.subs.length;k++){ if(item.subs[k].active) idxs.push(k); }
+    idxs.sort(function(a,b){ return (item.subs[b].t - item.subs[a].t) || (item.subs[a].name||"").localeCompare(item.subs[b].name||""); });
+    for (var p=0;p<idxs.length;p++){ item.subs[idxs[p]].color = shades[p]; }
+  }
+
+  // Nudge elements
+  var nBackdrop=$("#nudgeBackdrop"), nudge=$("#nudge"), nTag=$("#nTag"), nVal=$("#nVal"),
+      nPlus=$("#nPlus"), nMinus=$("#nMinus"), nClose=$("#nClose"),
+      subsPanel=$("#subsPanel"), qsPattern=$("#qsPattern"),
+      qs2=$("#qs2"), qs3=$("#qs3"), qs4=$("#qs4"), qs5=$("#qs5"), qsAdd=$("#qsAdd"), qsRemove=$("#qsRemove");
+
+  var nCtx=null; var nPos={x:0,y:0};
+  function isSmall(){ return window.matchMedia && window.matchMedia('(max-width: 600px)').matches; }
+  function getPoint(evt){
+    if (evt.touches && evt.touches.length){ return {x:evt.touches[0].clientX, y:evt.touches[0].clientY}; }
+    if (evt.changedTouches && evt.changedTouches.length){ return {x:evt.changedTouches[0].clientX, y:evt.changedTouches[0].clientY}; }
+    return {x:(evt.clientX||window.innerWidth/2), y:(evt.clientY||window.innerHeight/2)};
+  }
+  function openNudgeById(itemId, clientX, clientY){
+    nCtx = {itemId:itemId}; nPos = {x:clientX, y:clientY};
+    nBackdrop.style.display="grid"; nBackdrop.setAttribute("aria-hidden","false");
+    refreshNudge(); positionNudge();
+  }
+  function closeNudge(){ nBackdrop.style.display="none"; nBackdrop.setAttribute("aria-hidden","true"); nCtx=null; }
+  if (nBackdrop) nBackdrop.addEventListener("click", function(e){ if (e.target===nBackdrop) closeNudge(); });
+  if (nClose) nClose.addEventListener("click", closeNudge);
+
+  function positionNudge(){
+    if (!nudge) return;
+    if (isSmall()){
+      nudge.style.position='relative'; nudge.style.left='auto'; nudge.style.top='auto'; return;
+    }
+    nudge.style.position='absolute';
+    var pad=10, rect={w:nudge.offsetWidth||320, h:nudge.offsetHeight||46};
+    var x=nPos.x+12, y=nPos.y-rect.h-12, vw=window.innerWidth;
+    if (x+rect.w+pad>vw) x = vw - rect.w - pad;
+    if (y<pad) y = nPos.y + 12;
+    nudge.style.left = x+"px"; nudge.style.top = y+"px";
+  }
+
+  function refreshNudge(){
+    if (!nCtx) return;
+    var i=findItemIndexById(nCtx.itemId); if (i<0) return;
+    var it=items[i];
+    if (nTag) nTag.textContent = (it.name||"").toLowerCase();
+    if (nVal) nVal.textContent = pct(it.t) + "%";
+    if (nPlus) nPlus.disabled = !(it.t<20 && (totalTicks(items)-it.t)>0);
+    if (nMinus) nMinus.disabled = !(it.t>0);
+
+    if (subsPanel){
+      subsPanel.innerHTML="";
+      ensureSubs(i);
+      var act=activeSubs(it).slice().sort(function(a,b){ return (b.t-a.t) || (a.name||"").localeCompare(b.name||""); });
+      for (var s=0;s<act.length;s++){
+        var sub=act[s], subIdx=it.subs.indexOf(sub);
+        var row=document.createElement("div"); row.className="srow";
+        var name=document.createElement("div"); name.className="sname";
+        var nameInput=document.createElement("input"); nameInput.value=sub.name||"";
+        (function(ii,si,input){ input.addEventListener("input", function(){ items[ii].subs[si].name = input.value; renderRight(); save(false); }); })(i, subIdx, nameInput);
+        name.appendChild(nameInput);
+        var minus=document.createElement("button"); minus.className="sbtn"; minus.textContent="–";
+        var val=document.createElement("span"); val.className="sval"; val.textContent= Math.round((sub.t/20)*100) + "%";
+        var plus=document.createElement("button"); plus.className="sbtn"; plus.textContent="+";
+        (function(ii,si){
+          minus.addEventListener("click", function(){ if (adjustSubTick(items[ii], si, -1)){ normalizeSubShades(ii); renderRight(); save(false); refreshNudge(); positionNudge(); }});
+          plus.addEventListener("click", function(){ if (adjustSubTick(items[ii], si, +1)){ normalizeSubShades(ii); renderRight(); save(false); refreshNudge(); positionNudge(); }});
+        })(i, subIdx);
+        row.appendChild(name); row.appendChild(minus); row.appendChild(val); row.appendChild(plus);
+        subsPanel.appendChild(row);
+      }
+    }
+  }
+
+  if (nPlus) nPlus.addEventListener("click", function(){
+    if (!nCtx) return; var i=findItemIndexById(nCtx.itemId); if (i<0) return;
+    var it=items[i]; if (it.t<20 && (totalTicks(items)-it.t)>0){
+      it.t = clamp(it.t+1, 0, 20); takeTicksFromOthers(i,1); enforce20(i); renderRight(); save(false); refreshNudge(); positionNudge();
+    }
+  });
+  if (nMinus) nMinus.addEventListener("click", function(){
+    if (!nCtx) return; var i=findItemIndexById(nCtx.itemId); if (i<0) return;
+    var it=items[i]; if (it.t>0){
+      it.t = clamp(it.t-1, 0, 20); giveTicksToOthers(i,1); enforce20(i); renderRight(); save(false); refreshNudge(); positionNudge();
+    }
+  });
+
+  // Quick split controls
+  function doQuickSplit(n){
+    if (!nCtx) return; var i=findItemIndexById(nCtx.itemId); if (i<0) return;
+    var pat = qsPattern ? qsPattern.value : 'even';
+    activateNSubs(i, n); applyPatternTicks(items[i], n, pat); normalizeSubShades(i);
+    renderRight(); save(false); refreshNudge(); positionNudge();
+  }
+  if (qs2) qs2.addEventListener("click", function(){ doQuickSplit(2); });
+  if (qs3) qs3.addEventListener("click", function(){ doQuickSplit(3); });
+  if (qs4) qs4.addEventListener("click", function(){ doQuickSplit(4); });
+  if (qs5) qs5.addEventListener("click", function(){ doQuickSplit(5); });
+  if (qsAdd) qsAdd.addEventListener("click", function(){
+    if (!nCtx) return; var i=findItemIndexById(nCtx.itemId);
+    ensureSubs(i);
+    // add one blank sub
+    var item=items[i], current=activeSubs(item).length;
+    if (current>=9) return;
+    var slot=null, k;
+    for(k=0;k<item.subs.length;k++){ if(!item.subs[k].active){ slot=item.subs[k]; break; } }
+    if (!slot) return;
+    slot.active=true; slot.t=0; slot.name=""; // blank name
+    // give 2 ticks from largest if possible
+    var best=-1, bestVal=-1;
+    for(k=0;k<item.subs.length;k++){ var s=item.subs[k]; if(s.active && s.t>bestVal){bestVal=s.t; best=k;} }
+    if (bestVal>1){ item.subs[best].t -= 2; slot.t = 2; }
+    rebalanceSubTicks(item); normalizeSubShades(i);
+    renderRight(); save(false); refreshNudge(); positionNudge();
+  });
+  if (qsRemove) qsRemove.addEventListener("click", function(){ if (!nCtx) return; var i=findItemIndexById(nCtx.itemId); removeLastSub(i); renderRight(); save(false); refreshNudge(); positionNudge(); });
+
+  function removeLastSub(i){
+    var item=items[i]; if (!item.subs) return;
+    var actIdx=[]; for (var k=0;k<item.subs.length;k++){ if(item.subs[k].active) actIdx.push(k); }
+    if (actIdx.length<=1) return;
+    var idxToRemove = actIdx[actIdx.length-1], give=item.subs[idxToRemove].t;
+    item.subs[idxToRemove].active=false; item.subs[idxToRemove].t=0;
+    var remain=[]; for (k=0;k<item.subs.length;k++){ if(item.subs[k].active) remain.push(k); }
+    if (remain.length){ remain.sort(function(a,b){return item.subs[b].t - item.subs[a].t}); item.subs[remain[0]].t += give; }
+    rebalanceSubTicks(item); normalizeSubShades(i);
+  }
+  function applyPatternTicks(item, n, pattern){
+    var idxs=[]; for (var i=0;i<item.subs.length;i++){ if(item.subs[i].active) idxs.push(i); } idxs = idxs.slice(0,n);
+    function setTicks(arr){ for(var p=0;p<idxs.length;p++){ item.subs[idxs[p]].t = arr[p]||0; } rebalanceSubTicks(item); }
+    if (pattern==='even'){
+      var base=Math.floor(20/n), rem=20-base*n, arr=new Array(n).fill(base);
+      for (i=0;i<n && rem>0;i++){ arr[i]++; rem--; } setTicks(arr);
+    } else if (pattern==='9010' && n>=2){
+      var a=[18,2]; while(a.length<n) a.push(0); setTicks(a);
+    } else if (pattern==='801010' && n>=3){
+      var a2=[16,2,2]; while(a2.length<n) a2.push(0); setTicks(a2);
+    } else if (pattern==='pareto'){
+      var a3=[13,4,2,1].slice(0,n), need=20-a3.reduce(function(x,y){return x+y;},0);
+      for (i=0;i<n && need>0;i++){ a3[i]++; need--; } setTicks(a3);
+    } else {
+      var base2=Math.floor(20/n), rem2=20-base2*n, arr2=new Array(n).fill(base2);
+      for (i=0;i<n && rem2>0;i++){ arr2[i]++; rem2--; } setTicks(arr2);
+    }
+  }
+  function activateNSubs(i, n){
+    ensureSubs(i);
+    var item = items[i], count=0;
+    for (var k=0;k<item.subs.length;k++){
+      if (count<n){
+        if (!item.subs[k].active){ item.subs[k].name = item.subs[k].name || ""; }
+        item.subs[k].active=true; count++;
+      } else { item.subs[k].active=false; }
+      item.subs[k].t=0;
+    }
+  }
+
+  // Save/Load/Reset/Print
+  function save(fb){
+    try{
+      localStorage.setItem("tm_ticks_build", JSON.stringify({title:titleInput.value, items:items}));
+      if (fb){ var b=$("#save"); if (b){ var t=b.textContent; b.textContent="✓ Saved"; setTimeout(function(){ b.textContent=t; }, 900);} }
+    }catch(e){}
+  }
+  var btnSave=$("#save"), btnLoad=$("#load"), btnPrint=$("#print"), btnReset=$("#reset");
+  if (btnSave) btnSave.addEventListener("click", function(){ save(true); });
+  if (btnLoad) btnLoad.addEventListener("click", function(){
+    try{
+      var s=JSON.parse(localStorage.getItem("tm_ticks_build")||"");
+      if (s && s.items){ items=s.items.map(function(it){ it.id=it.id||uid(); if(it.subs){ it.subs=it.subs.map(function(ss){ ss.id=ss.id||uid(); return ss; }); } return it; });
+        if (s.title) titleInput.value=s.title; renderRight(); }
+    }catch(e){}
+  });
+  if (btnPrint) btnPrint.addEventListener("click", function(){ window.print(); });
+  if (btnReset) btnReset.addEventListener("click", function(){ items = buildStart(); renderRight(); save(false); });
+  if (titleInput) titleInput.addEventListener("input", function(){ save(false); renderRight(); });
+
+  // Render chart (sorted copy) — labels displayed lowercased
+  function renderRight(){
+    if (!bar) return;
+    bar.innerHTML="";
+    var sorted = itemsSortedDesc();
+    var sumTicks = totalTicks(sorted) || 1;
+
+    for (var ii=0; ii<sorted.length; ii++){
+      var it=sorted[ii];
+
+      var seg=document.createElement("div");
+      seg.className="seg";
+      seg.style.width = (it.t/sumTicks*100).toFixed(4)+"%";
+      seg.style.background = it.color;
+
+      var inner=document.createElement("div"); inner.className="seg-inner";
+
+      var act = it.subs ? activeSubs(it).slice().sort(function(a,b){ return (b.t - a.t) || (a.name||"").localeCompare(b.name||""); }) : [];
+      if (act.length){
+        var tot=0; for (var k=0;k<act.length;k++) tot+=act[k].t; if (tot===0) tot=1;
+        for (var s=0;s<act.length;s++){
+          var sub=document.createElement("div");
+          sub.className="sub-seg";
+          sub.style.height=(act[s].t/tot*100).toFixed(4)+"%";
+          sub.style.background=act[s].color;
+          var lab=document.createElement("div"); lab.className="area-label sub-label"; lab.textContent=(act[s].name||"");
+          sub.appendChild(lab);
+
+          // tap/click support
+          sub.addEventListener("click", function(e){
+            e.stopPropagation(); var p=getPoint(e); openNudgeById(it.id, p.x, p.y);
+          }, {passive:true});
+          sub.addEventListener("touchstart", function(e){
+            e.stopPropagation(); var p=getPoint(e); openNudgeById(it.id, p.x, p.y);
+          }, {passive:true});
+
+          inner.appendChild(sub);
+        }
+      } else {
+        var lab=document.createElement("div"); lab.className="area-label col-label"; lab.textContent=(it.name||"");
+        seg.appendChild(lab);
+      }
+
+      // tap/click support on column
+      seg.addEventListener("click", function(e){
+        var p=getPoint(e); openNudgeById(this.__itemId, p.x, p.y);
+      }, {passive:true});
+      seg.addEventListener("touchstart", function(e){
+        var p=getPoint(e); openNudgeById(this.__itemId, p.x, p.y);
+      }, {passive:true});
+      seg.__itemId = it.id;
+
+      seg.appendChild(inner);
+      bar.appendChild(seg);
+    }
+
+    requestAnimationFrame(updateLabelLayout);
+  }
+
+  // Rotate labels if column < 4ch
+  var chPxCache=null;
+  function measureCh(){
+    if (chPxCache) return chPxCache;
+    var probe=document.createElement("div");
+    probe.style.position="absolute"; probe.style.visibility="hidden"; probe.style.width="1ch"; probe.textContent="0";
+    document.body.appendChild(probe);
+    chPxCache = probe.getBoundingClientRect().width || 8; document.body.removeChild(probe);
+    return chPxCache;
+  }
+  function updateLabelLayout(){
+    var CH_THRESHOLD=4, chPx=measureCh(), pxThreshold=chPx*CH_THRESHOLD;
+    var labs=document.querySelectorAll(".col-label");
+    for (var i=0;i<labs.length;i++){
+      var lab=labs[i], seg=lab.closest(".seg"); if (!seg) continue;
+      var w=seg.clientWidth, h=seg.clientHeight;
+      if (w<pxThreshold){ lab.classList.add("rotate-90"); lab.style.maxWidth=Math.max(24,h-8)+"px"; }
+      else { lab.classList.remove("rotate-90"); lab.style.maxWidth="92%"; }
+    }
+  }
+
+  // Boot
+  renderRight();
+  window.addEventListener("resize", function(){ if (nCtx){ positionNudge(); } requestAnimationFrame(updateLabelLayout); });
+})();
+</script>
+</body>
+</html>
